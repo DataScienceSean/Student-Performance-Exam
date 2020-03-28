@@ -1,0 +1,223 @@
+---
+title: "Student Performance Exam Regression Decision Tree"
+author: "Sean F. Larsen"
+date: "March 27, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rpart)
+library(rpart.plot)
+library(Metrics)
+```
+
+## Regression Decision Tree
+A Decision Tree is a simple Machine Learning toolthat has many advantages. They are easy to understand and interpret, they work with categorical and numerical data, they require little data processing, and feature selection is automatic. They are not susceptible to outliers and can capture nonlinear relationships. The downside of decision trees is they are prone to overfitting, and with large complex data sets can be inaccurate.
+
+Previously I created a Categorical Decision Tree using the Iris data data set. This exercise is a regression decision tree using the Student Performce Exam from the UCI Machine Learning Repository.
+
+## About the Data Set
+This data is the culmination of student achievement in secondary education of two Portuguese schools. The data attributes include student grades, demographic, social and school related features) and it was collected by using school reports and questionnaires. Two datasets are provided regarding the performance in two distinct subjects: Mathematics (mat) and Portuguese language (por). In [Cortez and Silva, 2008], the two datasets were modeled under binary/five-level classification and regression tasks. Important note: the target attribute G3 has a strong correlation with attributes G2 and G1. This occurs because G3 is the final year grade (issued at the 3rd period), while G1 and G2 correspond to the 1st and 2nd period grades. It is more difficult to predict G3 without G2 and G1, but such prediction is much more useful (see paper source for more details).
+
+P. Cortez and A. Silva. Using Data Mining to Predict Secondary School Student Performance. In A. Brito and J. Teixeira Eds., Proceedings of 5th FUture BUsiness TEChnology Conference (FUBUTEC 2008) pp. 5-12, Porto, Portugal, April, 2008, EUROSIS, ISBN 978-9077381-39-7.
+
+[Click here to Download the PDF with information about the data set.](http://www3.dsi.uminho.pt/pcortez/student.pdf)
+
+## Predictions, Tuning, and Evaluating 
+The purose of this excersise was to create a decision tree regession model that predicted the final score of a students score on the Student Performace Exam. The possible scores were a numeric value from 0 to 20.  I also created an evaluation matrix to test various models that have been tuned to provide the most acurate prediction.
+
+## Data Cleaning
+The data set as downloaded was in a CSV file, however the data contained semi-colon instead of commas, so I had to do some quick cleaning to make that data usable in R Studio.
+
+# Split the Data
+I split the data set into three different sets.  A training set, validation set, and testing set.
+The training set contained 70% of the data and the other two contained 15% each.
+After initial exploration, this splits the data into training, validation, and test sets.
+
+```{r include=FALSE}
+# Read the CSV file
+stud_por <- read.csv("student-por.csv")
+
+#Create a Dataframe
+stud_por_df <- data.frame(stud_por)
+
+# Look at the data
+str(stud_por_df)
+head(stud_por_df)
+
+# Set seed and create assignment
+set.seed(123)
+assignment <- sample(1:3, size = nrow(stud_por_df), prob = c(70,15,15), replace = TRUE)
+
+# Create a train, validation and tests from the original data frame 
+stud_por_train <- stud_por_df[assignment == 1, ]    # subset grade to training indices only
+stud_por_valid <- stud_por_df[assignment == 2, ]  # subset grade to validation indices only
+stud_por_test <- stud_por_df[assignment == 3, ]   # subset grade to test indices only
+```
+## Train a Regression Tree Model
+The stud_por_train dataset was used to fit a regression tree using rpart() and visualize it using rpart.plot(). A regression tree plot looks identical to a classification tree plot, with the exception that there will be numeric values in the leaf nodes instead of predicted classes.
+
+```{r echo=FALSE}
+# Train the model
+stud_por_model <- rpart(formula = G3 ~ ., 
+                     data = stud_por_train, 
+                     method = "anova")
+
+# Look at the model output                      
+print(stud_por_model)
+
+# Plot the tree model
+rpart.plot(x = stud_por_model, yesno = 2, type = 0, extra = 0, box.palette="GnRd")
+```
+
+## Evaluate a Regression Tree Model
+I ran the model and made a prediction and stored the result in the stud_por_test set.  I evaluated the model based on that set using the RMSE (Root Mean Squared Error) test. RMSE tells us approximately how far away our predictions are from the true values. MAE (Mean Average Error) is also used.  The MAE tells us the average distance our predicted values are from the true values.
+
+```{r echo=FALSE}
+# Generate predictions on a test set
+pred <- predict(object = stud_por_model,   # model object 
+                newdata = stud_por_test)  # test dataset
+
+# Compute the RMSE
+rmse(actual = stud_por_test$G3, 
+     predicted = pred)
+
+# Compute the MAE
+mae(actual = stud_por_test$G3, 
+     predicted = pred)
+```
+
+#Tuning the Model
+The model is tuned (or "trimed") using the prune() function.  There is pre-pruning and post-pruning.  In prepruneing there are two parameters I used.  The minsplit and maxdepth
+
+The minsplit parameter is the smallest number of observations in the parent node that could be split further. The default is 20. If you have less than 20 records in a parent node, it is labeled as a terminal node.
+
+The maxdepth parameter prevents the tree from growing past a certain depth / height. In the example code, I arbitrarily set it to 5. The default is 30 (and anything beyond that, per the help docs, may cause bad results on 32 bit machines).
+
+Post-Pruning is done by finding the best CP value (CP stands for "Complexity Parameter"). The CP is the minimum improvement in the model needed at each node.  It is also a stopping parameter that helps speed up the search for splits because it can identify splits that don’t meet this criteria and prune them before going too far. Using the printcp() function, I can select the CP with the least cross-validated error and use it to prune the tree.
+
+```{r echo=FALSE}
+# Plot the "CP Table"
+plotcp(stud_por_model)
+
+# Print the "CP Table"
+print(stud_por_model$cptable)
+
+# Retrieve optimal cp value based on cross-validated error
+opt_index <- which.min(stud_por_model$cptable[, "xerror"])
+cp_opt <- stud_por_model$cptable[opt_index, "CP"]
+
+opt_index
+cp_opt
+
+# Prune the model (to optimized cp value)
+stud_por_model_opt <- prune(tree = stud_por_model, 
+                         cp = cp_opt)
+                          
+# Plot the optimized model
+rpart.plot(x = stud_por_model_opt, yesno = 2, type = 0, extra = 0, box.palette="GnRd")
+```
+
+## Manual Grid Search
+In order to test a large number of trees and determine which tree is the best, a manual grid search will be done.
+This will include a loop that tests a number of models and evalutes each model.
+The best model will then be selected.
+
+## Generate a Grid of minsplit and maxdepth Values
+To maximize the effectivness of pre-pruning, I generated a grid of maxdepth and minsplit values using the expand.grid() function.
+
+```{r echo=FALSE}
+# Establish a list of possible values for minsplit and maxdepth
+minsplit <- seq(1, 4, 1)
+maxdepth <- seq(1, 6, 1)
+
+# Create a data frame containing all combinations 
+hyper_grid <- expand.grid(minsplit = minsplit, maxdepth = maxdepth)
+
+# Check out the grid
+head(hyper_grid)
+
+# Print the number of grid combinations
+nrow(hyper_grid)
+```
+
+##Generate a Grid of Models
+I used a simple for loop to train a "grid" of models and store the models in a list called stud_por_models. This could easily be turned into a function, but the perpose was to demonstrate the loop and how well it work. The loop created 24 models that needed evaluation.
+
+```{r echo=FALSE}
+# Number of potential models in the grid
+num_models <- nrow(hyper_grid)
+
+# Create an empty list to store models
+stud_por_models <- list()
+
+# Write a loop over the rows of hyper_grid to train the grid of models
+for (i in 1:num_models) {
+
+    # Get minsplit, maxdepth values at row i
+    minsplit <- hyper_grid$minsplit[i]
+    maxdepth <- hyper_grid$maxdepth[i]
+
+    # Train a model and store in the list
+    stud_por_models[[i]] <- rpart(formula = G3 ~ ., 
+                               data = stud_por_train, 
+                               method = "anova",
+                               minsplit = minsplit,
+                               maxdepth = maxdepth)
+}
+```
+
+##Evaluate the Grid
+I used validation set to compare the performance of a group of models with the goal of choosing a "best model" from the group. All the models in a group were evaluated on the same validation set and the model with the best performance was selected as the best model.
+
+Once I have the best model selected, I did a final estimate of performance that was computed based on the test set.
+
+```{r echo=FALSE}
+# Number of potential models in the grid
+num_models <- length(stud_por_model)
+
+# Create an empty vector to store RMSE values
+rmse_values <- c()
+
+# Write a loop over the models to compute validation RMSE
+for (i in 1:num_models) {
+
+    # Retrieve the i^th model from the list
+    models <- stud_por_models[[i]]
+    
+    # Generate predictions on grade_valid 
+    pred <- predict(object = models,
+                    newdata = stud_por_valid)
+    
+    # Compute validation RMSE and add to the 
+    rmse_values[i] <- rmse(actual = stud_por_valid$G3, 
+                           predicted = pred)
+}
+
+# Identify the model with smallest validation set RMSE
+best_model <- stud_por_models[[which.min(rmse_values)]]
+
+# Print the model paramters of the best model
+best_model$control
+
+# Compute test set RMSE on best_model
+pred <- predict(object = best_model,
+                newdata = stud_por_test)
+rmse(actual = stud_por_test$G3, 
+     predicted = pred)
+
+# Plot the "CP Table"
+plotcp(best_model)
+
+# Print the "CP Table"
+print(best_model$cptable)
+
+# Plot the optimized model
+rpart.plot(x = best_model, yesno = 2, type = 0, extra = 0, box.palette="GnRd")
+```
+
+## Conclusion
+With the advantages of a Decision tree, you can create a simple regression machine learning model, validate multiple models, test the final result, and have a production ready model.
+
